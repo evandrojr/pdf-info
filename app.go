@@ -410,7 +410,7 @@ func (pa *PDFAnalyzer) extractAttachments(ctx *model.Context, info *PDFInfo) {
 
 func (pa *PDFAnalyzer) analyzeDigitalSignatures(filePath string, ctx *model.Context, info *PDFInfo) {
 	// Validar assinaturas usando pdfcpu
-	results, err := api.ValidateSignaturesFile(filePath, true, true, nil) // all=true, full=true
+	results, err := api.ValidateSignatures(filePath, true, nil) // all=true
 	if err != nil {
 		fmt.Printf("Aviso: erro ao validar assinaturas: %v\n", err)
 		info.HasDigitalSignatures = false
@@ -429,37 +429,40 @@ func (pa *PDFAnalyzer) analyzeDigitalSignatures(filePath string, ctx *model.Cont
 	info.Signatures = make([]DigitalSignatureInfo, 0, len(results))
 
 	// Processar cada resultado de validação
-	for i, result := range results {
+	for _, result := range results {
 		sigInfo := DigitalSignatureInfo{
-			FieldName: fmt.Sprintf("Signature_%d", i+1),
-			Status:    "Processada",
-			IsValid:   true, // Assumir válida se não houver erro na validação
-			Type:      "Digital",
+			FieldName:   result.Details.FieldName,
+			SubFilter:   result.Details.SubFilter,
+			SignerName:  result.Details.SignerName,
+			SigningTime: formatTime(result.Details.SigningTime),
+			Location:    result.Details.Location,
+			Reason:      result.Details.Reason,
+			ContactInfo: result.Details.ContactInfo,
+			IsCertified: result.Certified(),
+			IsValid:     result.Status == 1, // SignatureStatusValid
 		}
 
-		// Analisar o resultado da validação (string)
-		if strings.Contains(strings.ToLower(result), "invalid") {
-			sigInfo.Status = "Inválida"
-			sigInfo.IsValid = false
-		} else if strings.Contains(strings.ToLower(result), "valid") {
+		// Determinar status da assinatura
+		switch result.Status {
+		case 1: // model.SignatureStatusValid
 			sigInfo.Status = "Válida"
-			sigInfo.IsValid = true
-		} else {
+		case 2: // model.SignatureStatusInvalid
+			sigInfo.Status = "Inválida"
+		default: // model.SignatureStatusUnknown ou outros
 			sigInfo.Status = "Desconhecida"
-			sigInfo.IsValid = false
 		}
 
-		// Extrair informações básicas da string de resultado
-		if strings.Contains(result, "certified") {
+		// Adicionar problemas de validação se existirem
+		if len(result.Problems) > 0 {
+			sigInfo.ValidationErrors = result.Problems
+		}
+
+		// Determinar tipo de assinatura
+		if result.Certified() {
 			sigInfo.Type = "Certificada"
-			sigInfo.IsCertified = true
 		} else {
 			sigInfo.Type = "Aprovação"
-			sigInfo.IsCertified = false
 		}
-
-		// Adicionar detalhes da validação
-		sigInfo.ValidationErrors = []string{result}
 
 		info.Signatures = append(info.Signatures, sigInfo)
 	}
@@ -577,45 +580,55 @@ func (pa *PDFAnalyzer) PrintReport(info *PDFInfo) {
 		}
 	}
 
-	// Assinaturas digitais
+	// Assinaturas digitais - seção sempre visível
+	fmt.Println("\n🔐 ASSINATURAS DIGITAIS")
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Printf("Documento possui assinaturas: %s\n", boolToYesNo(info.HasDigitalSignatures))
+	fmt.Printf("Número de assinaturas: %d\n", info.SignatureCount)
+	
 	if info.HasDigitalSignatures && len(info.Signatures) > 0 {
-		fmt.Println("\n🔐 ASSINATURAS DIGITAIS")
-		fmt.Println(strings.Repeat("-", 50))
+		fmt.Println("\nDetalhes das assinaturas:")
 		for i, sig := range info.Signatures {
-			fmt.Printf("Assinatura %d:\n", i+1)
+			fmt.Printf("\n  Assinatura %d:\n", i+1)
 			if sig.FieldName != "" {
-				fmt.Printf("  Campo: %s\n", sig.FieldName)
+				fmt.Printf("    Campo: %s\n", sig.FieldName)
 			}
-			fmt.Printf("  Tipo: %s\n", sig.Type)
-			fmt.Printf("  SubFilter: %s\n", sig.SubFilter)
-			fmt.Printf("  Status: %s\n", sig.Status)
-			fmt.Printf("  Válida: %s\n", boolToYesNo(sig.IsValid))
-			fmt.Printf("  Certificada: %s\n", boolToYesNo(sig.IsCertified))
+			fmt.Printf("    Tipo: %s\n", sig.Type)
+			if sig.SubFilter != "" {
+				fmt.Printf("    SubFilter: %s\n", sig.SubFilter)
+			}
+			fmt.Printf("    Status: %s\n", sig.Status)
+			fmt.Printf("    Válida: %s\n", boolToYesNo(sig.IsValid))
+			fmt.Printf("    Certificada: %s\n", boolToYesNo(sig.IsCertified))
 			if sig.SignerName != "" {
-				fmt.Printf("  Assinante: %s\n", sig.SignerName)
+				fmt.Printf("    Assinante: %s\n", sig.SignerName)
 			}
 			if sig.SigningTime != "" {
-				fmt.Printf("  Data/Hora da assinatura: %s\n", sig.SigningTime)
+				fmt.Printf("    Data/Hora da assinatura: %s\n", sig.SigningTime)
 			}
 			if sig.Location != "" {
-				fmt.Printf("  Local: %s\n", sig.Location)
+				fmt.Printf("    Local: %s\n", sig.Location)
 			}
 			if sig.Reason != "" {
-				fmt.Printf("  Motivo: %s\n", sig.Reason)
+				fmt.Printf("    Motivo: %s\n", sig.Reason)
 			}
 			if sig.ContactInfo != "" {
-				fmt.Printf("  Contato: %s\n", sig.ContactInfo)
+				fmt.Printf("    Contato: %s\n", sig.ContactInfo)
 			}
 			if len(sig.ValidationErrors) > 0 {
-				fmt.Printf("  Problemas de validação:\n")
+				fmt.Printf("    Problemas de validação:\n")
 				for _, err := range sig.ValidationErrors {
-					fmt.Printf("    - %s\n", err)
+					fmt.Printf("      - %s\n", err)
 				}
 			}
-			if i < len(info.Signatures)-1 {
-				fmt.Println()
-			}
 		}
+	} else {
+		fmt.Println("\nEste documento não possui assinaturas digitais.")
+		fmt.Println("Para assinar digitalmente um PDF, você pode usar:")
+		fmt.Println("  • Adobe Acrobat")
+		fmt.Println("  • LibreOffice")
+		fmt.Println("  • Ferramentas online de assinatura")
+		fmt.Println("  • Certificados digitais ICP-Brasil")
 	}
 
 	fmt.Println("\n" + strings.Repeat("=", 80))
