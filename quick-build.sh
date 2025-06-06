@@ -4,7 +4,8 @@
 set -e
 
 APP_NAME="pdf-info"
-SOURCE_FILE="pdf-info.go"
+# Agora usamos todos os arquivos Go (exceto testes)
+SOURCE_FILES="."
 RELEASES_DIR="releases"
 
 # Cores
@@ -26,7 +27,7 @@ build_and_compress() {
     local output_name=$3
     
     echo -e "${GREEN}Compilando ${goos}/${goarch}...${NC}"
-    CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -ldflags="-s -w -extldflags '-static'" -a -installsuffix cgo -o "$output_name" "$SOURCE_FILE"
+    CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -ldflags="-s -w -extldflags '-static'" -a -installsuffix cgo -o "$output_name" "$SOURCE_FILES"
     
     echo -e "${BLUE}Comprimindo ${output_name}...${NC}"
     gzip -9 "$output_name"
