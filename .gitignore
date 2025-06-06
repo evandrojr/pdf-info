@@ -1,5 +1,5 @@
 # Binaries
-*.exe
+# *.exe
 *.dll
 *.so
 *.dylib
@@ -28,8 +28,8 @@ vendor/
 Thumbs.db
 
 # Certificates and sensitive files
-cert/*.pem
-cert/*.key
+# cert/*.pem
+# cert/*.key
 
 # PDF output or temp files
 pdfs/*.tmp

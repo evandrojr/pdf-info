@@ -9,8 +9,15 @@ A comprehensive PDF analysis tool written in Go that provides detailed informati
 - **Technical Analysis**: PDF version, page count, encryption status, linearization
 - **Security Features**: Encryption details, permission restrictions
 - **Digital Signatures**: Detection and basic validation of digital signatures
+- **Timestamp Detection**: Detection and analysis of digital timestamps in signatures
+  - RFC3161 timestamp support
+  - Serpro TSA timestamp detection
+  - ICP-Brasil timestamp recognition
+  - Timestamp authority identification
+  - Formatted timestamp display
 - **Content Analysis**: Text extraction, image counting, page dimensions
 - **Multi-language Support**: Full English output with proper error handling
+- **Static Linking**: Standalone executables with no external dependencies
 
 ## Installation
 

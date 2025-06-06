@@ -17,8 +17,8 @@ help:
 
 # Build the program
 build:
-	@echo "🔧 Building PDF analysis program..."
-	go build -o pdf-info pdf-info.go
+	@echo "🔧 Building PDF analysis program with static linking..."
+	CGO_ENABLED=0 go build -ldflags="-s -w -extldflags '-static'" -a -installsuffix cgo -o pdf-info pdf-info.go
 	@echo "✅ Build completed successfully!"
 
 # Run all tests

@@ -92,6 +92,27 @@ func TestPDFAnalysis(t *testing.T) {
 			},
 		},
 		{
+			name:    "PDF with timestamp signature",
+			pdfFile: "pdfs/simple-test-timestamp.pdf",
+			expectedInOutput: []string{
+				"PDF ANALYSIS REPORT",
+				"FILE INFORMATION",
+				"File name: simple-test-timestamp.pdf",
+				"DIGITAL SIGNATURES",
+				"Document has signatures: Yes",
+				"Number of signatures: 1",
+				"Has timestamp: Yes",
+				"Timestamp type:",
+				"Timestamp time:",
+			},
+			notExpectedInOutput: []string{
+				"Error analyzing PDF",
+				"Document has signatures: No",
+				"Has timestamp: No",
+				"Timestamp type: Unknown",
+			},
+		},
+		{
 			name:    "PDF with special characters in name",
 			pdfFile: "pdfs/pdf-version-test.pdf",
 			expectedInOutput: []string{
@@ -353,6 +374,170 @@ func TestNonPDFFileHandling(t *testing.T) {
 	// PDF version should be empty for non-PDF files
 	if !strings.Contains(outputStr, "PDF version: \n") && !strings.Contains(outputStr, "PDF version: ") {
 		t.Error("Expected empty PDF version for non-PDF files")
+	}
+}
+
+// TestTimestampDetection tests timestamp detection functionality
+func TestTimestampDetection(t *testing.T) {
+	binaryPath := "./pdf-info"
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		t.Fatal("Binary pdf-info not found. Please run 'go build -o pdf-info pdf-info.go' first")
+	}
+
+	// Test timestamp detection on PDF with timestamp
+	timestampPDF := "pdfs/simple-test-timestamp.pdf"
+	if _, err := os.Stat(timestampPDF); os.IsNotExist(err) {
+		t.Skip("Timestamp PDF file not found, skipping timestamp test")
+	}
+
+	t.Run("PDF with timestamp", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, timestampPDF)
+		output, err := cmd.CombinedOutput()
+		
+		if err != nil {
+			t.Fatalf("Failed to execute binary: %v\nOutput: %s", err, string(output))
+		}
+
+		outputStr := string(output)
+
+		// Check that timestamp is detected
+		expectedTimestampFields := []string{
+			"Has timestamp: Yes",
+			"Timestamp type:",
+			"Timestamp time:",
+		}
+
+		for _, expected := range expectedTimestampFields {
+			if !strings.Contains(outputStr, expected) {
+				t.Errorf("Expected timestamp output to contain '%s', but it didn't.\nFull output:\n%s", expected, outputStr)
+			}
+		}
+
+		// Check that timestamp type is properly detected
+		if strings.Contains(outputStr, "Timestamp type: Unknown") {
+			t.Error("Timestamp type should not be 'Unknown' for a PDF with timestamp")
+		}
+
+		// Check that timestamp time is properly formatted
+		if strings.Contains(outputStr, "Timestamp time: Unknown") {
+			t.Error("Timestamp time should not be 'Unknown' for a PDF with timestamp")
+		}
+	})
+
+	// Test PDF without timestamp
+	regularPDF := "pdfs/simple-test.pdf"
+	if _, err := os.Stat(regularPDF); os.IsNotExist(err) {
+		t.Skip("Regular PDF file not found, skipping non-timestamp test")
+	}
+
+	t.Run("PDF without timestamp", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, regularPDF)
+		output, err := cmd.CombinedOutput()
+		
+		if err != nil {
+			t.Fatalf("Failed to execute binary: %v\nOutput: %s", err, string(output))
+		}
+
+		outputStr := string(output)
+
+		// Check that no timestamp is detected
+		if strings.Contains(outputStr, "Has timestamp: Yes") {
+			t.Error("Regular PDF should not have timestamp detected")
+		}
+
+		// It should either show "Has timestamp: No" or not show timestamp info at all
+		if strings.Contains(outputStr, "Has timestamp:") && !strings.Contains(outputStr, "Has timestamp: No") {
+			t.Error("PDF without timestamp should show 'Has timestamp: No' if timestamp field is present")
+		}
+	})
+}
+
+// TestDigitalSignatureEnhancements tests enhanced digital signature analysis
+func TestDigitalSignatureEnhancements(t *testing.T) {
+	binaryPath := "./pdf-info"
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		t.Fatal("Binary pdf-info not found. Please run 'go build -o pdf-info pdf-info.go' first")
+	}
+
+	// Test files with digital signatures
+	signatureTestFiles := []struct {
+		name     string
+		filename string
+		hasSignature bool
+	}{
+		{
+			name:         "PDF with timestamp signature",
+			filename:     "pdfs/simple-test-timestamp.pdf",
+			hasSignature: true,
+		},
+		{
+			name:         "PDF with ICP-Brasil signatures",
+			filename:     "pdfs/multiple-icp-brasil-signtures.pdf",
+			hasSignature: true,
+		},
+		{
+			name:         "Read-only signed PDF",
+			filename:     "pdfs/readonly-signed-icp-brazil.pdf",
+			hasSignature: true,
+		},
+		{
+			name:         "Regular PDF without signatures",
+			filename:     "pdfs/simple-test.pdf",
+			hasSignature: false,
+		},
+	}
+
+	for _, tc := range signatureTestFiles {
+		if _, err := os.Stat(tc.filename); os.IsNotExist(err) {
+			t.Logf("Test file %s not found, skipping %s", tc.filename, tc.name)
+			continue
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(binaryPath, tc.filename)
+			output, err := cmd.CombinedOutput()
+			
+			if err != nil {
+				t.Fatalf("Failed to execute binary: %v\nOutput: %s", err, string(output))
+			}
+
+			outputStr := string(output)
+
+			// Check digital signature section is always present
+			if !strings.Contains(outputStr, "DIGITAL SIGNATURES") {
+				t.Error("Output should always contain 'DIGITAL SIGNATURES' section")
+			}
+
+			if tc.hasSignature {
+				expectedSignatureFields := []string{
+					"Document has signatures: Yes",
+					"Number of signatures:",
+				}
+
+				for _, expected := range expectedSignatureFields {
+					if !strings.Contains(outputStr, expected) {
+						t.Errorf("Expected signature output to contain '%s', but it didn't.\nFull output:\n%s", expected, outputStr)
+					}
+				}
+
+				// For encrypted PDFs, we expect a different message
+				if strings.Contains(outputStr, "Is encrypted: Yes") {
+					// Encrypted PDFs should show validation failure message
+					if !strings.Contains(outputStr, "detailed validation failed due to encryption") {
+						t.Error("Encrypted PDF should show validation failure message")
+					}
+				} else {
+					// Non-encrypted PDFs should show detailed signature information
+					if !strings.Contains(outputStr, "Signature details:") {
+						t.Error("Non-encrypted PDF with signatures should show 'Signature details:'")
+					}
+				}
+			} else {
+				if !strings.Contains(outputStr, "Document has signatures: No") {
+					t.Error("PDF without signatures should show 'Document has signatures: No'")
+				}
+			}
+		})
 	}
 }
 
