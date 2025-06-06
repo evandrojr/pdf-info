@@ -61,6 +61,11 @@ type PDFInfo struct {
 	AssembleAllowed  bool
 	PrintHighQualityAllowed bool
 
+	// Informações de assinatura digital
+	HasDigitalSignatures bool
+	SignatureCount       int
+	Signatures          []DigitalSignatureInfo
+
 	// Informações das páginas
 	Pages []PageInfo
 
@@ -100,6 +105,21 @@ type AnnotationInfo struct {
 	Type    string
 	Page    int
 	Content string
+}
+
+type DigitalSignatureInfo struct {
+	Type          string
+	SubFilter     string
+	SignerName    string
+	SigningTime   string
+	Location      string
+	Reason        string
+	ContactInfo   string
+	FieldName     string
+	IsValid       bool
+	IsCertified   bool
+	Status        string
+	ValidationErrors []string
 }
 
 func main() {
@@ -256,6 +276,9 @@ func (pa *PDFAnalyzer) analyzePDFCPU(filePath string, info *PDFInfo) error {
 	// Analisar páginas
 	pa.analyzePages(ctx, info)
 
+	// Analisar assinaturas digitais
+	pa.analyzeDigitalSignatures(filePath, ctx, info)
+
 	return nil
 }
 
@@ -385,6 +408,70 @@ func (pa *PDFAnalyzer) extractAttachments(ctx *model.Context, info *PDFInfo) {
 	}
 }
 
+func (pa *PDFAnalyzer) analyzeDigitalSignatures(filePath string, ctx *model.Context, info *PDFInfo) {
+	// Validar assinaturas usando pdfcpu
+	results, err := api.ValidateSignaturesFile(filePath, true, true, nil) // all=true, full=true
+	if err != nil {
+		fmt.Printf("Aviso: erro ao validar assinaturas: %v\n", err)
+		info.HasDigitalSignatures = false
+		info.SignatureCount = 0
+		return
+	}
+
+	if len(results) == 0 {
+		info.HasDigitalSignatures = false
+		info.SignatureCount = 0
+		return
+	}
+
+	info.HasDigitalSignatures = true
+	info.SignatureCount = len(results)
+	info.Signatures = make([]DigitalSignatureInfo, 0, len(results))
+
+	// Processar cada resultado de validação
+	for i, result := range results {
+		sigInfo := DigitalSignatureInfo{
+			FieldName: fmt.Sprintf("Signature_%d", i+1),
+			Status:    "Processada",
+			IsValid:   true, // Assumir válida se não houver erro na validação
+			Type:      "Digital",
+		}
+
+		// Analisar o resultado da validação (string)
+		if strings.Contains(strings.ToLower(result), "invalid") {
+			sigInfo.Status = "Inválida"
+			sigInfo.IsValid = false
+		} else if strings.Contains(strings.ToLower(result), "valid") {
+			sigInfo.Status = "Válida"
+			sigInfo.IsValid = true
+		} else {
+			sigInfo.Status = "Desconhecida"
+			sigInfo.IsValid = false
+		}
+
+		// Extrair informações básicas da string de resultado
+		if strings.Contains(result, "certified") {
+			sigInfo.Type = "Certificada"
+			sigInfo.IsCertified = true
+		} else {
+			sigInfo.Type = "Aprovação"
+			sigInfo.IsCertified = false
+		}
+
+		// Adicionar detalhes da validação
+		sigInfo.ValidationErrors = []string{result}
+
+		info.Signatures = append(info.Signatures, sigInfo)
+	}
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
 func (pa *PDFAnalyzer) PrintReport(info *PDFInfo) {
 	fmt.Println("=" + strings.Repeat("=", 80))
 	fmt.Println("                        RELATÓRIO DE ANÁLISE DE PDF")
@@ -425,6 +512,10 @@ func (pa *PDFAnalyzer) PrintReport(info *PDFInfo) {
 	fmt.Printf("Tem formulários: %s\n", boolToYesNo(info.HasForms))
 	fmt.Printf("Tem JavaScript: %s\n", boolToYesNo(info.HasJavaScript))
 	fmt.Printf("Tem anotações: %s\n", boolToYesNo(info.HasAnnotations))
+	fmt.Printf("Tem assinaturas digitais: %s\n", boolToYesNo(info.HasDigitalSignatures))
+	if info.HasDigitalSignatures {
+		fmt.Printf("Número de assinaturas: %d\n", info.SignatureCount)
+	}
 
 	// Informações de segurança
 	if info.IsEncrypted {
@@ -483,6 +574,47 @@ func (pa *PDFAnalyzer) PrintReport(info *PDFInfo) {
 		fmt.Println(strings.Repeat("-", 50))
 		for _, attachment := range info.Attachments {
 			fmt.Printf("- %s (%s, %s)\n", attachment.Name, attachment.Type, formatFileSize(attachment.Size))
+		}
+	}
+
+	// Assinaturas digitais
+	if info.HasDigitalSignatures && len(info.Signatures) > 0 {
+		fmt.Println("\n🔐 ASSINATURAS DIGITAIS")
+		fmt.Println(strings.Repeat("-", 50))
+		for i, sig := range info.Signatures {
+			fmt.Printf("Assinatura %d:\n", i+1)
+			if sig.FieldName != "" {
+				fmt.Printf("  Campo: %s\n", sig.FieldName)
+			}
+			fmt.Printf("  Tipo: %s\n", sig.Type)
+			fmt.Printf("  SubFilter: %s\n", sig.SubFilter)
+			fmt.Printf("  Status: %s\n", sig.Status)
+			fmt.Printf("  Válida: %s\n", boolToYesNo(sig.IsValid))
+			fmt.Printf("  Certificada: %s\n", boolToYesNo(sig.IsCertified))
+			if sig.SignerName != "" {
+				fmt.Printf("  Assinante: %s\n", sig.SignerName)
+			}
+			if sig.SigningTime != "" {
+				fmt.Printf("  Data/Hora da assinatura: %s\n", sig.SigningTime)
+			}
+			if sig.Location != "" {
+				fmt.Printf("  Local: %s\n", sig.Location)
+			}
+			if sig.Reason != "" {
+				fmt.Printf("  Motivo: %s\n", sig.Reason)
+			}
+			if sig.ContactInfo != "" {
+				fmt.Printf("  Contato: %s\n", sig.ContactInfo)
+			}
+			if len(sig.ValidationErrors) > 0 {
+				fmt.Printf("  Problemas de validação:\n")
+				for _, err := range sig.ValidationErrors {
+					fmt.Printf("    - %s\n", err)
+				}
+			}
+			if i < len(info.Signatures)-1 {
+				fmt.Println()
+			}
 		}
 	}
 
