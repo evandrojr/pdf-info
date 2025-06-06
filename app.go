@@ -208,7 +208,7 @@ func (pa *PDFAnalyzer) analyzePDFCPU(filePath string, info *PDFInfo) error {
 
 	// Informações técnicas
 	if ctx.HeaderVersion != nil {
-		info.PDFVersion = fmt.Sprintf("%.1f", *ctx.HeaderVersion)
+		info.PDFVersion = fmt.Sprintf("%.1f", float64(*ctx.HeaderVersion))
 	}
 	info.PageCount = ctx.PageCount
 	info.IsEncrypted = ctx.E != nil
