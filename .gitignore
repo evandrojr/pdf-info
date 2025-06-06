@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output folders
+bin/
+obj/
+
+# Go build cache
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Certificates and sensitive files
+cert/*.pem
+cert/*.key
+
+# PDF output or temp files
+pdfs/*.tmp
+pdfs/*.bak
+
+# Logs
+*.log
+
+# Test files
+*.test
+
+# Ignore environment files
+.env
+.env.*
