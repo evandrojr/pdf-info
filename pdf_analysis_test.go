@@ -188,7 +188,7 @@ func TestInvalidInputs(t *testing.T) {
 		},
 		{
 			name:     "Non-PDF file",
-			args:     []string{"pdf-info.go"},
+			args:     []string{"go.mod"},
 			expectError: false, // Program doesn't fail, but shows warnings
 		},
 	}
@@ -344,7 +344,7 @@ func TestNonPDFFileHandling(t *testing.T) {
 	}
 
 	// Test with a non-PDF file
-	cmd := exec.Command(binaryPath, "pdf-info.go")
+	cmd := exec.Command(binaryPath, "go.mod")
 	output, err := cmd.CombinedOutput()
 	
 	if err != nil {
